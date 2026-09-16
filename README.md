@@ -1,131 +1,93 @@
-# Agent Swarm Skill for Kimi Code CLI
+# Agent Swarm Skill
 
-> Multi-agent task orchestration skill that brings web-tier swarm intelligence to the terminal.
+> Portable, spec-first orchestration for complex engineering work that benefits from coordinated specialists.
 
-[![Kimi Code CLI](https://img.shields.io/badge/Kimi%20Code%20CLI-Swarm-blue)](https://github.com/MoonshotAI/kimi-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+The skill helps a coordinating agent decide when parallel work is useful, define a shared specification, assign bounded missions, collect evidence, and integrate the result. It is host-neutral: an agent runtime may provide native subprocess or task controls, or the scripts can generate prompts for manual or external execution.
 
-## What is this?
+## What it provides
 
-A **skill** for [Kimi Code CLI](https://github.com/MoonshotAI/kimi-cli) that enables **multi-agent swarm orchestration** — inspired by Kimi Web's K2.6 Agent Swarm, but built entirely using Kimi Code CLI's native `Agent` tool.
+1. Detects work that can be split safely, while retaining a single-agent fallback.
+2. Creates a `SPEC.md` that records architecture, boundaries, interfaces, and ownership.
+3. Generates scoped worker prompts with explicit deliverables and forbidden zones.
+4. Tracks outputs through files so progress survives a chat or process restart.
+5. Supports review, integration, and deterministic local validation.
+6. Installs to an explicit host skill directory without probing or modifying unrelated tools.
 
-When you have a complex task with multiple independent parts, this skill automatically:
-
-1. 🔍 **Detects parallelizable work** (or obeys explicit "swarm this")
-2. 📝 **Writes a SPEC.md** — single source of truth
-3. 🤖 **Spawns N parallel agents** — each with scoped mission + forbidden zones
-4. 📊 **Monitors progress** — tracks completion
-5. ✅ **Cross-verifies** — optional reviewer agents for quality
-6. 🔗 **Merges results** — git merge or file copy
-7. 🧪 **Tests integration** — validates everything works together
-
-## Quick Start
+## Quick start
 
 ```bash
-# Clone the skill
+# Clone the repository
 git clone https://github.com/KJ-AIML/agent-swarm-skill.git
 
-# Install to Kimi Code CLI
-python agent-swarm-skill/agent-swarm/scripts/installer.py
+# Install to a host skill directory you choose
+python3 agent-swarm-skill/agent-swarm/scripts/installer.py \
+  --target ~/.config/agent-host/skills/agent-swarm
 
-# Use it
-kimi
-# Then say: "Swarm: build a CLI tool with auth, tests, and docs"
-# Or let it auto-detect: "Refactor auth module, write tests, update docs"
+# In a host that loads SKILL.md, request a bounded parallel task.
+# Example: "Swarm this refactor: split the parser, tests, and documentation."
 ```
 
-## How It Works
+The installer never guesses a host, writes to a home-directory convention, or removes files from the destination. Pass `--force` only when replacing an existing installation is intentional. The skill can also be used directly from the checkout by giving the host the path to `agent-swarm/SKILL.md`.
 
-### Mode Selection
+## Host contract
 
-The skill decides whether to swarm based on task complexity:
+A host integration should expose, at minimum:
 
-| Trigger | Mode |
-|---------|------|
-| "swarm", "parallel", "multi-agent" | **Multi-agent** |
-| 3+ independent modules | **Multi-agent** |
-| "refactor + test + doc" (auto-detected) | **Multi-agent** |
-| Single file, bug fix | **Single agent** |
+- a way to start a worker with a prompt and bounded scope;
+- status and cancellation signals;
+- a shared filesystem or artifact directory;
+- a final result that identifies changed files and validation evidence.
 
-### 8-Phase Workflow
+If a host does not provide one of these controls, use the generated prompt files and run workers through the host's documented mechanism. The skill does not assume a particular command, API, model, or vendor.
 
+## Workflow
+
+```text
+Decide → Specify → Initialize → Dispatch → Observe
+  → Collect → Review → Integrate → Validate → Deliver
 ```
-Plan & Decompose → Init Workspace → Dispatch Agents → Monitor
-  → Collect Results → Cross-Verify → Merge & Integrate → Deliver
-```
 
-### Agent Roles
+Use parallel work only when boundaries are real. Keep dependent work sequential, and let the coordinator own integration and the final test run.
+
+## Roles
 
 | Role | Purpose |
 |------|---------|
-| `architect` | System design, API contracts |
-| `implementer` | Write code per SPEC |
-| `tester` | Write tests |
-| `reviewer` | Code review, quality audit |
-| `documenter` | README, API docs |
-| `researcher` | Deep research on dimension |
-| `integrator` | Merge outputs, resolve conflicts |
+| `architect` | Define system design, contracts, and module boundaries |
+| `implementer` | Build one assigned slice from the specification |
+| `tester` | Exercise behavior, edge cases, and integration paths |
+| `reviewer` | Audit correctness, security, and specification compliance |
+| `documenter` | Keep usage and operational documentation accurate |
+| `researcher` | Investigate one bounded question and record sources |
+| `integrator` | Resolve interfaces and assemble the final result |
 
-## File Structure
+Role guides live under `agent-swarm/references/roles/`.
 
-```
+## Layout
+
+```text
 agent-swarm/
-├── SKILL.md                          # Core orchestration skill
-├── README.md                         # Skill documentation
+├── SKILL.md
+├── README.md
 ├── scripts/
-│   ├── init_swarm.py                # Init workspace + SPEC template
-│   ├── dispatch.py                  # Generate agent prompts
-│   ├── merge.py                     # Merge outputs
-│   ├── evaluate.py                  # A/B test skill vs baseline
-│   └── installer.py                 # Register with CLI tools
+│   ├── init_swarm.py
+│   ├── dispatch.py
+│   ├── merge.py
+│   ├── evaluate.py
+│   └── installer.py
 └── references/
-    ├── orchestration-patterns.md    # 6 swarm patterns
-    ├── subagent-templates.md        # Prompt templates
-    ├── worktree-guide.md           # Git worktree isolation
-    └── roles/                       # Per-role guides
-        ├── architect.md
-        ├── implementer.md
-        ├── tester.md
-        ├── reviewer.md
-        ├── documenter.md
-        ├── researcher.md
-        └── integrator.md
+    ├── orchestration-patterns.md
+    ├── subagent-templates.md
+    ├── worktree-guide.md
+    └── roles/
 ```
 
-## Verified: It Works
-
-We tested the skill with a real task: **"Build a JSON-to-CSV CLI tool"**
-
-- ✅ 3 parallel agents spawned successfully
-- ✅ Agent 1: Core converter module
-- ✅ Agent 2: CLI interface  
-- ✅ Agent 3: 39 tests + README (93% coverage)
-- ✅ All tests passed in 0.54s
-- ✅ Merge + integration verified
-
-## Core Principles
-
-1. **Mode-first** — Skill decides whether to swarm, not the user
-2. **Spec-first** — SPEC.md before any implementation
-3. **Main agent orchestrates** — plans, dispatches, merges
-4. **Parallelism by modules** — each agent owns a cohesive slice
-5. **File system coordination** — agents communicate through files
-6. **Interface contracts** — sacred, no unilateral changes
-7. **Test before merge** — each agent tests, main agent integrates
-
-## Inspired By
-
-- [Kimi Web](https://kimi.com) K2.6 Agent Swarm (260 internal skills)
-- `deep-research-swarm` — adaptive routing, file-based coordination
-- `vibecoding-general-swarm` — spec-first, git worktree isolation
-- `skill-creator-swarm` — mandatory A/B evaluation
+Generated workspaces are intentionally outside the installed skill and should be kept out of version control (`.swarm/`, `.swarm-log/`, and evaluation output).
 
 ## Requirements
 
-- Kimi Code CLI
-- Python 3.10+
-- Git (optional, for branch-based merging)
+- Python 3.10 or newer for the helper scripts
+- Git only when branch or worktree isolation is selected
+- A host runtime that can execute the prompts, or a human/operator for manual execution
 
-## License
-
-MIT
+The helper scripts use only the Python standard library. Run `python3 -m unittest discover -s agent-swarm/tests` from the repository root to validate the portable behavior.

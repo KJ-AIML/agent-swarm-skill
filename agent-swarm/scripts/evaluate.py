@@ -9,18 +9,13 @@ Usage:
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
 
 
-def run_agent(prompt: str, skill_path: str = None) -> dict:
-    """
-    Run a single agent task. 
-    In Kimi Code CLI, this would use Agent() tool.
-    For standalone script, we write prompt files for manual execution.
-    """
+def run_agent(prompt: str, skill_path: str | None = None) -> dict:
+    """Record a prompt for later host or manual execution. This does not start a worker."""
     mode = "with_skill" if skill_path else "baseline"
     
     return {
@@ -35,11 +30,12 @@ def setup_eval_workspace(task_name: str) -> str:
     """Create evaluation workspace."""
     
     workspace = f"eval-workspace/{task_name}"
-    os.makedirs(f"{workspace}/with_skill", exist_ok=True)
-    os.makedirs(f"{workspace}/without_skill", exist_ok=True)
-    os.makedirs(f"{workspace}/grader", exist_ok=True)
-    os.makedirs(f"{workspace}/comparator", exist_ok=True)
-    
+    for folder in ("with_skill", "without_skill", "grader", "comparator"):
+        path = f"{workspace}/{folder}"
+        try:
+            os.makedirs(path, exist_ok=True)
+        except OSError as error:
+            raise SystemExit(f"EVAL_DIRECTORY_FAILED: {path}: {error}") from error
     return workspace
 
 
@@ -92,8 +88,11 @@ Return:
 """
     
     grader_path = f"{workspace}/grader/PROMPT.md"
-    with open(grader_path, "w") as f:
-        f.write(grader_prompt)
+    try:
+        with open(grader_path, "w", encoding="utf-8") as f:
+            f.write(grader_prompt)
+    except OSError as error:
+        raise SystemExit(f"EVAL_WRITE_FAILED: {grader_path}: {error}") from error
     
     return {"grader_prompt": grader_path}
 
@@ -117,8 +116,11 @@ Return:
 """
     
     comp_path = f"{workspace}/comparator/PROMPT.md"
-    with open(comp_path, "w") as f:
-        f.write(comparator_prompt)
+    try:
+        with open(comp_path, "w", encoding="utf-8") as f:
+            f.write(comparator_prompt)
+    except OSError as error:
+        raise SystemExit(f"EVAL_WRITE_FAILED: {comp_path}: {error}") from error
     
     return {"comparator_prompt": comp_path}
 
@@ -137,10 +139,15 @@ def run_evaluation(task_description: str, skill_path: str, expectations: list):
     with_skill_prompt, baseline_prompt = generate_eval_prompts(task_description, skill_path)
     
     # Save prompts
-    with open(f"{workspace}/with_skill/PROMPT.md", "w") as f:
-        f.write(with_skill_prompt)
-    with open(f"{workspace}/without_skill/PROMPT.md", "w") as f:
-        f.write(baseline_prompt)
+    for rel, content in (
+        (f"{workspace}/with_skill/PROMPT.md", with_skill_prompt),
+        (f"{workspace}/without_skill/PROMPT.md", baseline_prompt),
+    ):
+        try:
+            with open(rel, "w", encoding="utf-8") as f:
+                f.write(content)
+        except OSError as error:
+            raise SystemExit(f"EVAL_WRITE_FAILED: {rel}: {error}") from error
     
     print("Generated prompts:")
     print(f"  With skill: {workspace}/with_skill/PROMPT.md")
@@ -172,8 +179,12 @@ def run_evaluation(task_description: str, skill_path: str, expectations: list):
         ]
     }
     
-    with open(f"{workspace}/meta.json", "w") as f:
-        json.dump(meta, f, indent=2)
+    meta_path = f"{workspace}/meta.json"
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+    except OSError as error:
+        raise SystemExit(f"EVAL_WRITE_FAILED: {meta_path}: {error}") from error
     
     print("Next: Execute both agents, then run grader/comparator")
 
