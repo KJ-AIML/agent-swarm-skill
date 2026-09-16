@@ -1,98 +1,87 @@
 #!/usr/bin/env python3
-"""
-Install agent-swarm skill to Kimi Code CLI and other tools.
+"""Copy the agent-swarm skill into an explicit destination directory."""
 
-Usage:
-    python installer.py
-"""
+from __future__ import annotations
 
-import os
+import argparse
 import shutil
 import sys
 from pathlib import Path
 
-
-TOOL_PATHS = {
-    "kimi_code": [
-        "~/.kimi/skills/agent-swarm/SKILL.md",
-        ".kimi/skills/agent-swarm/SKILL.md",
-    ],
-    "claude_code": [
-        "~/.claude/skills/agent-swarm/SKILL.md",
-        ".claude/skills/agent-swarm/SKILL.md",
-    ],
-    "cursor": [
-        "~/.cursor/skills/agent-swarm/SKILL.md",
-        ".cursor/skills/agent-swarm/SKILL.md",
-    ],
-}
+SKIP_DIR_NAMES = {".git", "__pycache__", ".swarm", ".swarm-log"}
 
 
-def install_skill(skill_dir: str, target_dir: str):
-    """Install skill to target directory."""
-    target = Path(target_dir).expanduser()
-    target.mkdir(parents=True, exist_ok=True)
-    
-    # Copy skill files
-    src = Path(skill_dir)
-    for item in src.rglob("*"):
-        if item.is_file():
-            rel = item.relative_to(src)
-            dest = target / rel
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(item, dest)
-    
-    return str(target)
+def skill_source(explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    return Path(__file__).resolve().parent.parent
 
 
-def detect_installed_tools():
-    """Detect which tools are installed by checking paths."""
-    detected = []
-    
-    for tool, paths in TOOL_PATHS.items():
-        for path in paths:
-            expanded = Path(path).expanduser().parent
-            if expanded.exists():
-                detected.append(tool)
-                break
-    
-    return detected
+def should_skip(path: Path, source: Path) -> bool:
+    rel_parts = path.relative_to(source).parts
+    if any(part in SKIP_DIR_NAMES for part in rel_parts):
+        return True
+    name = path.name
+    return name.endswith(".pyc") or name == ".DS_Store"
 
 
-def main():
-    skill_dir = Path(__file__).parent.parent
-    
-    print("Agent Swarm Skill Installer")
-    print("=" * 40)
-    
-    # Detect tools
-    detected = detect_installed_tools()
-    
-    if detected:
-        print(f"Detected tools: {', '.join(detected)}")
+def install_skill(source: Path, target: Path, force: bool) -> Path:
+    if not source.is_dir():
+        raise SystemExit(f"INSTALL_SOURCE_MISSING: {source}")
+    skill_file = source / "SKILL.md"
+    if not skill_file.is_file():
+        raise SystemExit(f"INSTALL_SOURCE_INVALID: SKILL.md is missing from {source}")
+    if target.exists():
+        if target.is_file():
+            raise SystemExit(f"INSTALL_TARGET_INVALID: {target} is a file")
+        occupied = any(target.iterdir())
+        if occupied and not force:
+            raise SystemExit(
+                "INSTALL_TARGET_EXISTS: destination is not empty; pass --force to replace files"
+            )
     else:
-        print("No known tools detected. Will install to project-level paths.")
-    
-    # Install to detected tools + project level
-    installed = []
-    
-    for tool, paths in TOOL_PATHS.items():
-        if tool in detected or not detected:
-            for path in paths:
-                target = Path(path).expanduser().parent
-                try:
-                    install_skill(skill_dir, target)
-                    installed.append(f"{tool}: {target}")
-                    break
-                except Exception as e:
-                    print(f"Warning: Failed to install to {path}: {e}")
-    
-    print("\nInstalled to:")
-    for loc in installed:
-        print(f"  {loc}")
-    
-    print("\nTo use: Start a new conversation. The skill auto-activates for parallelizable tasks.")
+        target.mkdir(parents=True, exist_ok=True)
+
+    copied = 0
+    for item in source.rglob("*"):
+        if not item.is_file() or should_skip(item, source):
+            continue
+        dest = target / item.relative_to(source)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, dest)
+        copied += 1
+    if copied == 0:
+        raise SystemExit("INSTALL_SOURCE_EMPTY: no skill files were copied")
+    return target
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Install agent-swarm into an explicit skill directory."
+    )
+    parser.add_argument(
+        "--target",
+        required=True,
+        help="Destination directory. The installer never guesses a host path.",
+    )
+    parser.add_argument(
+        "--source",
+        help="Skill directory containing SKILL.md. Defaults to the parent of this script.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace files in an existing destination.",
+    )
+    args = parser.parse_args(argv)
+    source = skill_source(args.source)
+    target = Path(args.target).expanduser()
+    if not target.is_absolute():
+        target = Path.cwd() / target
+    installed = install_skill(source, target.resolve(), args.force)
+    print(f"Installed agent-swarm to {installed}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
