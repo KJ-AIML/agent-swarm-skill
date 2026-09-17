@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import subprocess
 import tempfile
@@ -132,6 +133,48 @@ class SkillPortabilityTests(unittest.TestCase):
             self.assertIn("Implement: parser", prompt)
             self.assertNotIn("Agent()", prompt)
             self.assertNotIn("run_in_background", completed.stdout)
+
+    def test_dispatch_updates_metadata_for_selected_swarm(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            selected = root / ".swarm" / "output" / "20260917-010000"
+            newer = root / ".swarm" / "output" / "20260917-020000"
+            (selected / "agent-01").mkdir(parents=True)
+            (newer / "agent-01").mkdir(parents=True)
+            (selected / "SPEC.md").write_text(
+                "# SPEC\n\n### Agent 1\n\n- Scope: parser\n- Files: src/parser.py\n- Interfaces: parse()\n",
+                encoding="utf-8",
+            )
+            log_dir = root / ".swarm-log"
+            log_dir.mkdir()
+            selected_meta = log_dir / "swarm-20260917-010000.json"
+            newer_meta = log_dir / "swarm-20260917-020000.json"
+            selected_meta.write_text(
+                json.dumps({"swarm_dir": ".swarm/output/20260917-010000", "status": "initialized"}),
+                encoding="utf-8",
+            )
+            newer_meta.write_text(
+                json.dumps({"swarm_dir": ".swarm/output/20260917-020000", "status": "initialized"}),
+                encoding="utf-8",
+            )
+            os.utime(selected_meta, (1, 1))
+            os.utime(newer_meta, (2, 2))
+
+            completed = subprocess.run(
+                ["python3", str(SCRIPTS / "dispatch.py"), "--swarm-dir", str(selected)],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=root,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            selected_state = json.loads(selected_meta.read_text(encoding="utf-8"))
+            newer_state = json.loads(newer_meta.read_text(encoding="utf-8"))
+            self.assertEqual(selected_state["status"], "dispatched")
+            self.assertEqual(selected_state["agents_dispatched"], 1)
+            self.assertEqual(newer_state["status"], "initialized")
+            self.assertNotIn("agents_dispatched", newer_state)
 
     def test_init_and_merge_copy_are_self_contained(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

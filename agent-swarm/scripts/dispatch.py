@@ -61,6 +61,19 @@ def agent_dir_name(agent_id: str) -> str:
         raise SystemExit(f"DISPATCH_INVALID_AGENT_ID: {agent_id}") from error
 
 
+def metadata_for_swarm(swarm_dir: str) -> tuple[Path, dict] | None:
+    selected = Path(swarm_dir).resolve()
+    for path in sorted(Path(".swarm-log").glob("swarm-*.json")):
+        try:
+            meta = json.loads(read_text(str(path)))
+        except json.JSONDecodeError:
+            continue
+        recorded = meta.get("swarm_dir")
+        if isinstance(recorded, str) and Path(recorded).resolve() == selected:
+            return path, meta
+    return None
+
+
 def build_prompt(agent: dict, swarm_dir: str) -> str:
     folder = os.path.join(swarm_dir, agent_dir_name(agent["id"]))
     return f"""You are Implementer Agent {agent["id"]}.
@@ -103,16 +116,12 @@ def dispatch_agents(swarm_dir: str, agent_count: int | None = None) -> None:
         print(f"  Agent {agent['id']}: {agent['scope']}")
         print(f"    Prompt: {prompt_path}")
 
-    meta_files = list(Path(".swarm-log").glob("swarm-*.json"))
-    if meta_files:
-        latest = max(meta_files, key=lambda path: path.stat().st_mtime)
-        try:
-            meta = json.loads(read_text(str(latest)))
-            meta["status"] = "dispatched"
-            meta["agents_dispatched"] = len(agents)
-            write_text(str(latest), json.dumps(meta, indent=2))
-        except (OSError, json.JSONDecodeError) as error:
-            raise SystemExit(f"DISPATCH_METADATA_FAILED: {latest}: {error}") from error
+    metadata = metadata_for_swarm(swarm_dir)
+    if metadata:
+        meta_path, meta = metadata
+        meta["status"] = "dispatched"
+        meta["agents_dispatched"] = len(agents)
+        write_text(str(meta_path), json.dumps(meta, indent=2))
 
     print("\nNext steps:")
     print("1. Give each PROMPT.md to a worker through the host's documented runner")
